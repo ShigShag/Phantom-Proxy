@@ -4,6 +4,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/hashicorp/yamux"
 )
@@ -12,7 +13,7 @@ import (
 func DefaultConfig() *yamux.Config {
 	cfg := yamux.DefaultConfig()
 	cfg.EnableKeepAlive = true
-	cfg.KeepAliveInterval = 30
+	cfg.KeepAliveInterval = 30 * time.Second
 	cfg.MaxStreamWindowSize = 256 * 1024
 	cfg.LogOutput = io.Discard
 	return cfg

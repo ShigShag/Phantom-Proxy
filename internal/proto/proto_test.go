@@ -148,6 +148,86 @@ func TestHandshakeSuccess(t *testing.T) {
 	}
 }
 
+func TestSleepCfgRoundTrip(t *testing.T) {
+	var buf bytes.Buffer
+	cfg := SleepCfgPayload{IntervalSec: 300, JitterPct: 30}
+	if err := WriteSleepCfg(&buf, cfg); err != nil {
+		t.Fatalf("WriteSleepCfg: %v", err)
+	}
+	got, err := ReadSleepCfg(&buf)
+	if err != nil {
+		t.Fatalf("ReadSleepCfg: %v", err)
+	}
+	if got.IntervalSec != 300 {
+		t.Fatalf("IntervalSec = %d, want 300", got.IntervalSec)
+	}
+	if got.JitterPct != 30 {
+		t.Fatalf("JitterPct = %d, want 30", got.JitterPct)
+	}
+}
+
+func TestCmdAckNackRoundTrip(t *testing.T) {
+	t.Run("ack", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := WriteCmdAck(&buf); err != nil {
+			t.Fatal(err)
+		}
+		msg, err := ReadMessage(&buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if msg.Type != CmdAck {
+			t.Fatalf("type = 0x%02x, want 0x%02x", msg.Type, CmdAck)
+		}
+		if len(msg.Payload) != 0 {
+			t.Fatalf("expected empty payload, got %d bytes", len(msg.Payload))
+		}
+	})
+
+	t.Run("nack", func(t *testing.T) {
+		var buf bytes.Buffer
+		errMsg := "command rejected"
+		if err := WriteCmdNack(&buf, errMsg); err != nil {
+			t.Fatal(err)
+		}
+		msg, err := ReadMessage(&buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if msg.Type != CmdNack {
+			t.Fatalf("type = 0x%02x, want 0x%02x", msg.Type, CmdNack)
+		}
+		if string(msg.Payload) != errMsg {
+			t.Fatalf("payload = %q, want %q", string(msg.Payload), errMsg)
+		}
+	})
+}
+
+func TestCmdWakeSleepRoundTrip(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		msgType byte
+	}{
+		{"wake", CmdWake},
+		{"sleep", CmdSleep},
+		{"checkin_done", CmdCheckinDone},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := WriteMessage(&buf, &Message{Type: tc.msgType}); err != nil {
+				t.Fatal(err)
+			}
+			msg, err := ReadMessage(&buf)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if msg.Type != tc.msgType {
+				t.Fatalf("type = 0x%02x, want 0x%02x", msg.Type, tc.msgType)
+			}
+		})
+	}
+}
+
 func TestHandshakeBadSecret(t *testing.T) {
 	server, client := net.Pipe()
 	defer server.Close()
