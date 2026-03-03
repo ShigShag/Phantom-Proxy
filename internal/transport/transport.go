@@ -23,6 +23,9 @@ type Config struct {
 	HostHeader string
 	UserAgent string
 	UseTLS    bool
+
+	// Upstream proxy
+	ProxyURL string
 }
 
 // Transport defines the interface every transport must implement.

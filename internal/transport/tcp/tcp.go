@@ -1,6 +1,7 @@
 package tcp
 
 import (
+	"context"
 	"net"
 
 	"github.com/ShigShag/Phantom-Proxy/internal/transport"
@@ -15,8 +16,8 @@ type TCP struct{}
 
 func (t *TCP) Name() string { return "tcp" }
 
-func (t *TCP) Dial(addr string, _ *transport.Config) (net.Conn, error) {
-	return net.Dial("tcp", addr)
+func (t *TCP) Dial(addr string, cfg *transport.Config) (net.Conn, error) {
+	return cfg.DialRawTCP(context.Background(), addr)
 }
 
 func (t *TCP) Listen(addr string, _ *transport.Config) (net.Listener, error) {

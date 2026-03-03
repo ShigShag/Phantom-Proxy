@@ -12,9 +12,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	socks5 "github.com/things-go/go-socks5"
 	"golang.org/x/net/proxy"
 )
 
@@ -309,6 +311,113 @@ func TestIntegration(t *testing.T) {
 		// Wait for server to see the reconnection.
 		if _, err := waitForLog(serverStderr, "client reconnected", 10*time.Second); err != nil {
 			t.Fatal(err)
+		}
+	})
+
+	t.Run("upstream_http_proxy", func(t *testing.T) {
+		t.Parallel()
+
+		// Start an HTTP CONNECT proxy.
+		var proxyUsed atomic.Int64
+		proxyLn, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { proxyLn.Close() })
+		go func() {
+			for {
+				c, err := proxyLn.Accept()
+				if err != nil {
+					return
+				}
+				go func() {
+					defer c.Close()
+					req, err := http.ReadRequest(bufio.NewReader(c))
+					if err != nil || req.Method != http.MethodConnect {
+						c.Write([]byte("HTTP/1.1 400 Bad Request\r\n\r\n"))
+						return
+					}
+					dest, err := net.Dial("tcp", req.Host)
+					if err != nil {
+						c.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
+						return
+					}
+					defer dest.Close()
+					proxyUsed.Add(1)
+					c.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
+					go io.Copy(dest, c)
+					io.Copy(c, dest)
+				}()
+			}
+		}()
+
+		socksAddr := getFreePort(t)
+
+		serverAddr, _, serverStderr := startServer(t,
+			"-listen", "127.0.0.1:0",
+			"-transport", "tcp",
+			"-secret", "proxy-test-secret",
+			"-socks5", socksAddr,
+			"-log-level", "debug",
+		)
+
+		startClient(t, serverStderr,
+			"-server", serverAddr,
+			"-transport", "tcp",
+			"-secret", "proxy-test-secret",
+			"-reconnect=false",
+			"-log-level", "debug",
+			"-proxy", "http://"+proxyLn.Addr().String(),
+		)
+
+		time.Sleep(200 * time.Millisecond)
+
+		got := dialSOCKS5(t, socksAddr, target.URL)
+		if got != body {
+			t.Fatalf("body = %q, want %q", got, body)
+		}
+
+		if proxyUsed.Load() < 1 {
+			t.Fatal("HTTP CONNECT proxy was not used")
+		}
+	})
+
+	t.Run("upstream_socks5_proxy", func(t *testing.T) {
+		t.Parallel()
+
+		// Start a SOCKS5 proxy.
+		socksProxy := socks5.NewServer()
+		socksProxyLn, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { socksProxyLn.Close() })
+		go socksProxy.Serve(socksProxyLn)
+
+		socksAddr := getFreePort(t)
+
+		serverAddr, _, serverStderr := startServer(t,
+			"-listen", "127.0.0.1:0",
+			"-transport", "tcp",
+			"-secret", "socks-proxy-test-secret",
+			"-socks5", socksAddr,
+			"-log-level", "debug",
+		)
+
+		startClient(t, serverStderr,
+			"-server", serverAddr,
+			"-transport", "tcp",
+			"-secret", "socks-proxy-test-secret",
+			"-reconnect=false",
+			"-log-level", "debug",
+			"-proxy", "socks5://"+socksProxyLn.Addr().String(),
+		)
+
+		time.Sleep(200 * time.Millisecond)
+
+		got := dialSOCKS5(t, socksAddr, target.URL)
+		if got != body {
+			t.Fatalf("body = %q, want %q", got, body)
 		}
 	})
 

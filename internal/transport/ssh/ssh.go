@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -10,8 +11,8 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	pcrypto "github.com/ShigShag/Phantom-Proxy/internal/crypto"
 	"github.com/ShigShag/Phantom-Proxy/internal/buildcfg"
+	pcrypto "github.com/ShigShag/Phantom-Proxy/internal/crypto"
 	"github.com/ShigShag/Phantom-Proxy/internal/transport"
 )
 
@@ -66,22 +67,29 @@ func (s *SSH) Dial(addr string, cfg *transport.Config) (net.Conn, error) {
 		Timeout:         10 * time.Second,
 	}
 
-	conn, err := ssh.Dial("tcp", addr, sshCfg)
+	rawConn, err := cfg.DialRawTCP(context.Background(), addr)
 	if err != nil {
-		return nil, fmt.Errorf("ssh dial: %w", err)
+		return nil, err
 	}
 
-	ch, reqs, err := conn.OpenChannel(buildcfg.SSHChannelType, nil)
+	sshConn, chans, reqs, err := ssh.NewClientConn(rawConn, addr, sshCfg)
 	if err != nil {
-		conn.Close()
+		rawConn.Close()
+		return nil, fmt.Errorf("ssh handshake: %w", err)
+	}
+	client := ssh.NewClient(sshConn, chans, reqs)
+
+	ch, chanReqs, err := client.OpenChannel(buildcfg.SSHChannelType, nil)
+	if err != nil {
+		client.Close()
 		return nil, fmt.Errorf("open channel: %w", err)
 	}
-	go ssh.DiscardRequests(reqs)
+	go ssh.DiscardRequests(chanReqs)
 
 	tcpAddr, _ := net.ResolveTCPAddr("tcp", addr)
 	return &channelConn{
 		Channel:    ch,
-		sshConn:    conn,
+		sshConn:    client,
 		localAddr:  &net.TCPAddr{},
 		remoteAddr: tcpAddr,
 	}, nil

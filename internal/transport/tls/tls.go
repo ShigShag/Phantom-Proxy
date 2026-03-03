@@ -1,6 +1,7 @@
 package tls
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -50,7 +51,16 @@ func (t *TLS) Dial(addr string, cfg *transport.Config) (net.Conn, error) {
 		tlsCfg.Certificates = []tls.Certificate{cert}
 	}
 
-	return tls.Dial("tcp", addr, tlsCfg)
+	rawConn, err := cfg.DialRawTCP(context.Background(), addr)
+	if err != nil {
+		return nil, err
+	}
+	tlsConn := tls.Client(rawConn, tlsCfg)
+	if err := tlsConn.Handshake(); err != nil {
+		rawConn.Close()
+		return nil, fmt.Errorf("tls handshake: %w", err)
+	}
+	return tlsConn, nil
 }
 
 func (t *TLS) Listen(addr string, cfg *transport.Config) (net.Listener, error) {

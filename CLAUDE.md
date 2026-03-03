@@ -40,6 +40,7 @@ pkg/config/                  # ServerConfig, ClientConfig, PortForward types
 
 ## Key Architecture
 
+- **Upstream proxy**: Client supports `--proxy` flag to route the initial transport connection through an HTTP CONNECT or SOCKS5 proxy. `Config.ProxyURL` is passed to `DialRawTCP()` which calls `ProxyDial()` (in `internal/transport/proxydialer.go`). Each transport's `Dial` uses `DialRawTCP` to get the raw TCP connection, then runs TLS/SSH/WS over it.
 - **Connection flow**: Client dials server via transport -> yamux session -> stream 0 is control (auth + keepalive) -> streams 1+ for data (SOCKS5 / port forwards)
 - **Auth**: Server sends random 32-byte nonce, client computes HMAC-SHA256(DeriveKey(secret, DeterministicSalt("phantom-proxy")), nonce), server verifies
 - **Message framing**: `[1B type][4B big-endian length][payload]`, max 1 MiB per message
@@ -56,7 +57,7 @@ pkg/config/                  # ServerConfig, ClientConfig, PortForward types
 - `net.Pipe()` does NOT support `CloseWrite()` — use TCP connections or `http.ReadResponse` when half-close is needed
 - Integration tests (`integration_test.go`) build real binaries in `TestMain`, use ephemeral ports (`:0`), parse listen addresses from log output
 - Integration tests use `httptest.Server` as target — no external network calls
-- Integration tests cover: tcp, tls, ssh, http transports, bad_secret, port_forward, dormant_checkin
+- Integration tests cover: tcp, tls, ssh, http transports, bad_secret, port_forward, dormant_checkin, upstream_http_proxy, upstream_socks5_proxy
 - All tests pass with `-race` flag
 
 ## Code Style

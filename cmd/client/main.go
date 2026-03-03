@@ -48,6 +48,7 @@ func main() {
 		logLevel   = flag.String("log-level", "info", "log level (debug, info, warn, error)")
 		reconnect  = flag.Bool("reconnect", true, "auto-reconnect on disconnect")
 		dormant    = flag.Bool("dormant", false, "start in dormant mode (disconnect between check-ins)")
+		proxyURL   = flag.String("proxy", "", "upstream proxy URL (http://[user:pass@]host:port or socks5://[user:pass@]host:port)")
 
 		// TLS flags
 		certFile   = flag.String("cert", "", "TLS client certificate file")
@@ -122,6 +123,7 @@ func main() {
 		HostHeader:    *hostHeader,
 		UserAgent:     *userAgent,
 		UseTLS:        *caFile != "" || *certFile != "",
+		ProxyURL:      *proxyURL,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

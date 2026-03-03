@@ -52,7 +52,17 @@ func (h *HTTP) Dial(addr string, cfg *transport.Config) (net.Conn, error) {
 		opts.HTTPHeader.Set("User-Agent", cfg.UserAgent)
 	}
 
-	// TLS configuration.
+	// Build custom HTTP transport for proxy and/or TLS support.
+	httpTransport := &http.Transport{}
+	customTransport := false
+
+	if cfg.ProxyURL != "" {
+		httpTransport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return transport.ProxyDial(ctx, network, addr, cfg.ProxyURL)
+		}
+		customTransport = true
+	}
+
 	if cfg.UseTLS {
 		tlsCfg := &tls.Config{
 			InsecureSkipVerify: cfg.SkipVerify,
@@ -75,11 +85,12 @@ func (h *HTTP) Dial(addr string, cfg *transport.Config) (net.Conn, error) {
 			}
 			tlsCfg.Certificates = []tls.Certificate{cert}
 		}
-		opts.HTTPClient = &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: tlsCfg,
-			},
-		}
+		httpTransport.TLSClientConfig = tlsCfg
+		customTransport = true
+	}
+
+	if customTransport {
+		opts.HTTPClient = &http.Client{Transport: httpTransport}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

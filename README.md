@@ -69,6 +69,22 @@ Options: `-http-path /custom`, `-http-host example.com`, `-http-ua "Mozilla/5.0"
 
 HTTPS: add `-cert` and `-certkey` on the server (auto-generated TLS certs also work with `-transport http` if provided).
 
+## Upstream Proxy
+
+Route the client's outbound connection through a corporate or upstream proxy. Works with all transports.
+
+```
+./phantom-client -server host:4444 -secret s -transport tls -proxy http://proxy:8080
+./phantom-client -server host:4444 -secret s -proxy socks5://proxy:1080
+./phantom-client -server host:4444 -secret s -proxy http://user:pass@proxy:8080
+```
+
+Supported schemes:
+- `http://` — HTTP CONNECT proxy
+- `socks5://` — SOCKS5 proxy
+
+Both support optional `user:pass@` authentication.
+
 ## Port Forwarding
 
 Local forward (server listens, client dials target):
@@ -233,6 +249,7 @@ Available commands:
 | `-secret`          | (required)       | Shared secret                    |
 | `-reconnect`       | `true`           | Auto-reconnect with backoff      |
 | `-dormant`         | `false`          | Dormant mode (disconnect between check-ins) |
+| `-proxy`           |                  | Upstream proxy (`http://` or `socks5://[user:pass@]host:port`) |
 | `-remote-forward`  |                  | Remote port forward (repeatable) |
 | `-cert`            |                  | TLS client cert (mTLS, optional) |
 | `-certkey`         |                  | TLS client key (mTLS, optional)  |
